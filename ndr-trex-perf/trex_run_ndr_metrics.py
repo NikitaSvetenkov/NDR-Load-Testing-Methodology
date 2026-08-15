@@ -155,7 +155,6 @@ GRAFANA_DASHBOARDS_TREX = [
 ]
 DEFAULT_TIMEOUT_SEC = 100
 
-# ---------- DPDK stats parsing functions (добавлено) ----------
 def human_readable_size(size_str: str) -> str:
     return size_str.strip().replace("(", "").replace(")", "").strip()
 
@@ -261,22 +260,18 @@ def parse_dpdk_stats(filepath=None, content=None):
     return data
 
 
-# ------------------------------------------------------------
-
 class Keyvalue(argparse.Action):
-    # Constructor calling
+
     def __call__(self, parser, namespace,
                  values, option_string=None):
         setattr(namespace, self.dest, dict())
         for value in values:
-            # split it into key and value
             key, value = value.split('=')
-            # assign into dictionary
             getattr(namespace, self.dest)[key] = value
 
 
 def grafana_url(host, from_time, to_time, trex, test_id, ngfw_host):
-    time_offset = 10_000  # 10 Seconds time offset
+    time_offset = 10_000
     grafana_url_sample = "{0}/d/{1}/{1}?var-hostname={2}&var-test_id={3}&from={4}&to={5}"
     dashboards = {}
     if ngfw_host:
@@ -312,7 +307,7 @@ def influx_stat(host, test, profile, profile_path, stats, mult, latency_pps):
         "fields": {
         }
     }
-    # Metrics description https://github.com/cisco-system-traffic-generator/trex-core/blob/master/scripts/automation/trex_control_plane/doc/api/json_fields.rst?plain=1#L135
+
     if latency_pps:
         json_body_lat = deepcopy(json_body)
         json_body_lat['measurement'] = 'trex_tests_latency'
@@ -829,14 +824,12 @@ def parse_args():
                         help="Путь к файлу приватного SSH ключа (если указано, используется аутентификация по ключу вместо пароля)")
     parser.add_argument("--ip", default="127.0.0.1", help="IP адрес хоста (по умолчанию: 10.99.101.245)")
 
-    # Дополнительный аргумент для DPDK файла (добавлено)
     parser.add_argument('--dpdk-file',
                         dest='dpdk_file',
                         help='Path to dpdk_ifconfig file for NDR monitoring',
                         default=None,
                         type=str)
 
-    # Новые аргументы для мониторинга дисков
     parser.add_argument('--disk-monitor',
                         dest='disk_monitor',
                         help='Enable disk monitoring on remote host',
@@ -1015,8 +1008,7 @@ def get_cpu_usages_remote(ssh_client):
         idle_diff = idle2 - idle1
         if total_diff != 0:
             overall_usage = (total_diff - idle_diff) / total_diff * 100
-
-    # По ядрам
+          
     per_core = {}
     for cpu_id in per_core_times1:
         if cpu_id in per_core_times2:
@@ -1038,7 +1030,6 @@ def get_cpu_usages_remote(ssh_client):
 
 
 def monitor_cpu(host, user, password, key=None):
-    """Поток сбора CPU статистики."""
     influx = get_influx_client(args.influx_admin, args.influx_passwd, args.influx_db)
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1085,7 +1076,6 @@ def monitor_cpu(host, user, password, key=None):
 
 
 def get_memory_usage(ssh_client):
-    """Возвращает (mem_used_MB, mem_total_MB, swap_used_MB, swap_total_MB) через SSH."""
     try:
         stdin, stdout, stderr = ssh_client.exec_command("cat /proc/meminfo")
         output = stdout.read().decode()
@@ -1122,7 +1112,6 @@ def get_memory_usage(ssh_client):
 
 
 def monitor_memory(host, user, password, key=None):
-    """Поток сбора памяти."""
     influx = get_influx_client(args.influx_admin, args.influx_passwd, args.influx_db)
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1168,7 +1157,6 @@ def monitor_memory(host, user, password, key=None):
 
 
 def monitor_dpdk(host, dpdk_file, test_id, stop_event, user, password, key=None):
-    """Поток сбора метрик DPDK интерфейсов (физических и логических) с удалённого хоста."""
     influx = get_influx_client(args.influx_admin, args.influx_passwd, args.influx_db)
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1181,8 +1169,7 @@ def monitor_dpdk(host, dpdk_file, test_id, stop_event, user, password, key=None)
     except Exception as e:
         logging.error(f"SSH connection failed for DPDK monitoring: {e}")
         return
-
-    # Хранилища для первого и предыдущего снимков
+      
     initial_stats = None
     prev_stats = None
     prev_time = None
@@ -1190,7 +1177,7 @@ def monitor_dpdk(host, dpdk_file, test_id, stop_event, user, password, key=None)
     while not stop_event.is_set():
         try:
             now = time.time()
-            # Чтение файла через SSH
+
             stdin, stdout, stderr = ssh.exec_command(f"cat {dpdk_file}")
             content = stdout.read().decode('utf-8', errors='replace')
             err = stderr.read().decode().strip()
@@ -1204,18 +1191,15 @@ def monitor_dpdk(host, dpdk_file, test_id, stop_event, user, password, key=None)
 
             stats = parse_dpdk_stats(content=content)
 
-            # Инициализация при первом запуске
             if initial_stats is None:
                 initial_stats = stats
                 prev_stats = stats
                 prev_time = now
-                # Пропускаем отправку в первом цикле, чтобы накопить данные
                 time.sleep(2)
                 continue
 
             delta_time = now - prev_time
 
-            # Отправка физических портов
             for dev, dev_stats in stats.get('physical', {}).items():
                 init_dev = initial_stats.get('physical', {}).get(dev, {})
                 prev_dev = prev_stats.get('physical', {}).get(dev, {})
@@ -1261,7 +1245,6 @@ def monitor_dpdk(host, dpdk_file, test_id, stop_event, user, password, key=None)
                 except Exception as e:
                     logging.error(f"Influx write error (dpdk physical {dev}): {e}")
 
-            # Отправка логических портов
             for port, port_stats in stats.get('logical', {}).items():
                 init_port = initial_stats.get('logical', {}).get(port, {})
                 prev_port = prev_stats.get('logical', {}).get(port, {})
@@ -1304,7 +1287,6 @@ def monitor_dpdk(host, dpdk_file, test_id, stop_event, user, password, key=None)
                 except Exception as e:
                     logging.error(f"Influx write error (dpdk logical {port}): {e}")
 
-            # Обновляем предыдущие значения
             prev_stats = stats
             prev_time = now
 
@@ -1316,10 +1298,7 @@ def monitor_dpdk(host, dpdk_file, test_id, stop_event, user, password, key=None)
     ssh.close()
     logging.info("DPDK monitor thread finished")
 
-
-# ---------- Новые функции для мониторинга дисков ----------
 def get_remote_block_devices(ssh_client, filter_devices=None):
-    """Возвращает список блочных устройств на удалённом хосте, исключая виртуальные."""
     exclude = ('loop', 'ram', 'dm-', 'md', 'sr', 'fd', 'nbd', 'zram')
     try:
         stdin, stdout, stderr = ssh_client.exec_command("ls /sys/block")
@@ -1332,14 +1311,12 @@ def get_remote_block_devices(ssh_client, filter_devices=None):
         return []
 
     if filter_devices:
-        # фильтр по заданным именам (без /dev/)
         filter_devices = [d.strip() for d in filter_devices]
         devices = [d for d in devices if d in filter_devices]
     return sorted(devices)
 
 
 def read_remote_stat(ssh_client, dev):
-    """Читает /sys/block/<dev>/stat через SSH, возвращает список int."""
     try:
         stdin, stdout, stderr = ssh_client.exec_command(f"cat /sys/block/{dev}/stat")
         line = stdout.read().decode().strip()
@@ -1351,7 +1328,6 @@ def read_remote_stat(ssh_client, dev):
 
 
 def get_remote_device_info(ssh_client, dev):
-    """Возвращает (size_gb, model) для устройства."""
     size_gb = 0.0
     model = "N/A"
     try:
@@ -1373,7 +1349,6 @@ def get_remote_device_info(ssh_client, dev):
 
 
 def monitor_disks(host, user, password, key, interval, test_id, filter_devices=None):
-    """Поток сбора метрик дисков с удалённого хоста и отправки в InfluxDB (измерение diskmon)."""
     influx = get_influx_client(args.influx_admin, args.influx_passwd, args.influx_db)
     ssh = paramiko.SSHClient()
     ssh.set_missing_host_key_policy(paramiko.AutoAddPolicy())
@@ -1387,21 +1362,18 @@ def monitor_disks(host, user, password, key, interval, test_id, filter_devices=N
         logging.error(f"SSH connection failed for disk monitoring: {e}")
         return
 
-    # Хранилище предыдущих значений для каждого устройства
     prev_stats = {}
     prev_time = None
 
     try:
         while not stop_event.is_set():
             now = time.time()
-            # Получаем список устройств (может меняться, но редко)
             devices = get_remote_block_devices(ssh, filter_devices)
             if not devices:
                 logging.warning("No block devices found on remote host")
                 time.sleep(interval)
                 continue
 
-            # Если первый запуск, просто запоминаем время и статистику, ничего не отправляем
             if prev_time is None:
                 for dev in devices:
                     prev_stats[dev] = read_remote_stat(ssh, dev)
@@ -1411,15 +1383,13 @@ def monitor_disks(host, user, password, key, interval, test_id, filter_devices=N
 
             delta_time = now - prev_time
             if delta_time <= 0:
-                delta_time = interval  # fallback
+                delta_time = interval
 
             total_points = []
 
             for dev in devices:
                 curr = read_remote_stat(ssh, dev)
                 p = prev_stats.get(dev, [0] * 20)
-
-                # Разности за интервал (поля stat: 0 reads, 2 read sectors, 3 read time, 4 writes, 6 write sectors, 7 write time, 9 io time, 10 weighted io time)
                 d_reads = curr[0] - p[0]
                 d_writes = curr[4] - p[4]
                 d_sec_r = curr[2] - p[2]
@@ -1431,24 +1401,22 @@ def monitor_disks(host, user, password, key, interval, test_id, filter_devices=N
 
                 total_ios = d_reads + d_writes
                 if total_ios == 0:
-                    total_ios = 1  # избегаем деления на ноль
+                    total_ios = 1
 
-                # per-second метрики
                 rps = d_reads / delta_time
                 wps = d_writes / delta_time
-                rkbs = d_sec_r * 0.5 / delta_time  # секторы по 512 байт -> KB
+                rkbs = d_sec_r * 0.5 / delta_time
                 wkbs = d_sec_w * 0.5 / delta_time
 
                 await_ms = (d_time_r + d_time_w) / total_ios
                 r_await = d_time_r / d_reads if d_reads else 0.0
                 w_await = d_time_w / d_writes if d_writes else 0.0
 
-                util = min(100.0, d_io_time / (delta_time * 1000) * 100)  # io_time в миллисекундах
-                avgqu_sz = d_weighted / (delta_time * 1000)  # weighted time in ms -> средняя длина очереди
+                util = min(100.0, d_io_time / (delta_time * 1000) * 100)
+                avgqu_sz = d_weighted / (delta_time * 1000)
 
                 size_gb, model = get_remote_device_info(ssh, dev)
 
-                # Формируем точку InfluxDB
                 fields = {
                     'size_gb': float(size_gb),
                     'rps': float(round(rps, 2)),
@@ -1460,7 +1428,7 @@ def monitor_disks(host, user, password, key, interval, test_id, filter_devices=N
                     'w_await_ms': float(round(w_await, 2)),
                     'util_percent': float(round(util, 2)),
                     'avgqu_sz': float(round(avgqu_sz, 2)),
-                    # Можно добавить и абсолютные счётчики, если нужно
+
                     'read_ios': int(curr[0]),
                     'write_ios': int(curr[4]),
                     'read_sectors': int(curr[2]),
@@ -1478,14 +1446,12 @@ def monitor_disks(host, user, password, key, interval, test_id, filter_devices=N
                     "measurement": "diskmon",
                     "tags": tags,
                     "fields": fields,
-                    "time": int(now * 1_000_000_000)  # наносекунды
+                    "time": int(now * 1_000_000_000)
                 }
                 total_points.append(point)
 
-                # Обновляем предыдущее значение для этого устройства
                 prev_stats[dev] = curr
 
-            # Отправляем пачкой
             if total_points:
                 try:
                     influx.write_points(total_points, time_precision='n')
@@ -1500,9 +1466,6 @@ def monitor_disks(host, user, password, key, interval, test_id, filter_devices=N
     finally:
         ssh.close()
         logging.info("Disk monitor thread finished")
-
-
-# ------------------------------------------------------------
 
 if args.send_stats:
     threads = [
