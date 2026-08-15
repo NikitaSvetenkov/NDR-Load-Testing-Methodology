@@ -301,8 +301,10 @@ root hard nofile 20000000
 
 3) Нагрузочное тестирование NDR с включенными функциями безопасности.
 
-<img width="960" height="446" alt="image" src="https://github.com/user-attachments/assets/b7dd1940-9ab7-4970-9208-6fb9bd8afe67" />
-<img width="960" height="446" alt="image" src="https://github.com/user-attachments/assets/37dd96fb-c555-4083-9930-a5dd895faab0" />
+<img width="1037" height="522" alt="изображение" src="https://github.com/user-attachments/assets/6ed0f1d3-4aeb-4ee3-8737-70c0444a6269" />
+
+<img width="1194" height="552" alt="изображение" src="https://github.com/user-attachments/assets/2d9d3bda-df92-45f5-aa5e-dd41d8790dd5" />
+
 
 
 # Список проводимых тестов
